@@ -1,5 +1,3 @@
-#include "Log.h"
-
 #include "Layers/Network.h"
 
 #include <iostream>
@@ -30,10 +28,7 @@ void closeWSA() {
 #endif // _WIN32
 
 
-void main() {
-	logger::initLog();
-	logger::beginRegion("main");
-
+int main() {
 #ifdef _WIN32
 	startWSA();
 #endif // _WIN32
@@ -56,6 +51,5 @@ void main() {
 	closeWSA();
 #endif // _WIN32
 
-	logger::endRegion();
-	logger::terminateLog();
+	return 0;
 }

@@ -4,6 +4,7 @@
 
 #include <thread>
 #include <mutex>
+#include <memory>
 #include <iostream>
 #include <string>
 #include <cstring>
@@ -130,7 +131,7 @@ namespace sock {
 void htonMat4(const float mat4[16], void* nData) {
 	uint32_t* buf = reinterpret_cast<uint32_t*>(nData);
 	for (size_t i = 0; i < 16; i += 1) {
-		uint32_t nf = htonf(mat4[i]);
+		uint32_t nf = htonl(mat4[i]);
 		buf[i] = nf;
 	}
 }
@@ -138,7 +139,7 @@ void htonMat4(const float mat4[16], void* nData) {
 void ntohMat4(const void* nData, float mat4[16]) {
 	const uint32_t* buf = reinterpret_cast<const uint32_t*>(nData);
 	for (size_t i = 0; i < 16; i += 1) {
-		float hf = ntohf(buf[i]);
+		float hf = ntohl(buf[i]);
 		mat4[i] = hf;
 	}
 }
