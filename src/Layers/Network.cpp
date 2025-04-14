@@ -189,7 +189,7 @@ public:
 	// receive a packet from the specified socket
 	// socket has to be a dgram socket
 	// the address that sent the received packet will be written to addr with the size of adrrlen
-	static std::shared_ptr<Packet> receiveFromDgram(int& type, int socket, sockaddr* addr, int* addrlen, int flags = 0);
+	static std::shared_ptr<Packet> receiveFromDgram(int& type, int socket, sockaddr* addr, socklen_t* addrlen, int flags = 0);
 
 protected:
 	uint32_t fullSize();
@@ -387,7 +387,7 @@ std::shared_ptr<Packet> Packet::receiveFrom(int& type, int socket, int flags) {
 	return spPacket;
 }
 
-std::shared_ptr<Packet> Packet::receiveFromDgram(int& type, int socket, sockaddr* addr, int* addrlen, int flags) {
+std::shared_ptr<Packet> Packet::receiveFromDgram(int& type, int socket, sockaddr* addr, socklen_t* addrlen, int flags) {
 	char buf[UDP_PACKET_BUFFER_SIZE];
 	int bytesRead = recvfrom(socket, buf, UDP_PACKET_BUFFER_SIZE, 0, addr, addrlen); // get just header
 	if (bytesRead == -1) {
@@ -577,7 +577,7 @@ namespace server {
 		}
 		socketData.addr = clientAddr;
 		_clients.push_back(socketData);
-
+#
 		pollfd clientPollfd; // only for stream clients
 		clientPollfd.fd = socketData.stream;
 		clientPollfd.events = POLLIN;
@@ -592,7 +592,7 @@ namespace server {
 		printf("client disconnected: %s\n", sock::addrToPresentation(reinterpret_cast<sockaddr*>(&socket.addr)).c_str());
 
 		if (sock::close(socket.stream) < 0) {
-			sock::printLastError("close(stream)");
+			sock::printLastError("close(st#ream)");
 			exit(sock::lastError());
 		}
 
@@ -704,7 +704,7 @@ namespace server {
 
 	void recvClientDgram() {
 		sockaddr_storage addr;
-		int addrlen = sizeof(sockaddr_storage);
+		socklen_t addrlen = sizeof(sockaddr_storage);
 
 		int type;
 		auto spPacket = Packet::receiveFromDgram(type, _serverSocket.dgram, reinterpret_cast<sockaddr*>(&addr), &addrlen);
@@ -786,23 +786,23 @@ namespace server {
 		}
 
 		// creating the socket
-		if ((socketData.stream = socket(serverInfo->ai_family, SOCK_STREAM, serverInfo->ai_protocol)) < 0) {
+		if ((socketData.stream = socket(serverInfo->ai_family, SOCK_STREAM, 0)) < 0) {
 			sock::printLastError("socket");
 			exit(sock::lastError());
 		}
-		if ((socketData.dgram = socket(serverInfo->ai_family, SOCK_DGRAM, serverInfo->ai_protocol)) < 0) {
+		if ((socketData.dgram = socket(serverInfo->ai_family, SOCK_DGRAM, 0)) < 0) {
 			sock::printLastError("socket");
 			exit(sock::lastError());
 		}
 
 		// enable port reuse
-		const char yes = 1;
-		if (setsockopt(socketData.stream, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) == -1) {
-			sock::printLastError("setsockopt");
-		}
-		if (setsockopt(socketData.dgram, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) == -1) {
-			sock::printLastError("setsockopt");
-		}
+		//const char yes = 1;
+		//if (setsockopt(socketData.stream, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) == -1) {
+		//	sock::printLastError("setsockopt");
+		//}
+		//if (setsockopt(socketData.dgram, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) == -1) {
+		//	sock::printLastError("setsockopt");
+		//}
 
 		// bind to port
 		if (bind(socketData.stream, serverInfo->ai_addr, serverInfo->ai_addrlen) < 0) {
