@@ -165,11 +165,10 @@ struct SocketData { // combine the socket and its address into one type, cause t
 /* Packets */
 
 enum PacketType {
-	eUDPInit = 1,
-	eMESSAGE = 2,
-	eCONNECT = 3,
-	eDISCONNECT = 4,
-	eMOVE = 5
+	eMESSAGE = 1,
+	eCONNECT = 2,
+	eDISCONNECT = 3,
+	eMOVE = 4
 };
 
 class Packet {
@@ -212,23 +211,6 @@ protected:
 
 	// takes the pointer to the data part and fills the package with data
 	virtual void unpackData(const char* buf, uint32_t size) = 0;
-};
-
-// used by the server to store this clients dgram address for future udp communication
-class UDPInitPacket : public Packet {
-	friend class Packet;
-public:
-	// data
-	std::string username = "";
-
-protected:
-	uint32_t dataSize();
-
-	// packs the data into the given buffer, buffer needs to have the same size as packet.fullSize()
-	void pack(char* buf);
-
-	// takes just the data part
-	void unpackData(const char* buf, uint32_t size);
 };
 
 class MessagePacket : public Packet {
@@ -403,12 +385,7 @@ std::shared_ptr<Packet> Packet::receiveFromDgram(int& type, int socket, sockaddr
 	switch (type)
 	{
 	case eMESSAGE: {
-			spPacket = std::make_shared<MessagePacket>();
-			spPacket->unpackData(ptr, dataSize);
-			break;
-		}
-	case eUDPInit: {
-		spPacket = std::make_shared<UDPInitPacket>();
+		spPacket = std::make_shared<MessagePacket>();
 		spPacket->unpackData(ptr, dataSize);
 		break;
 	}
@@ -490,21 +467,6 @@ void ConnectPacket::pack(char* buf) {
 }
 
 void ConnectPacket::unpackData(const char* buf, uint32_t size) {
-	username = std::string(buf, size);
-}
-
-// UDPInitPacket
-uint32_t UDPInitPacket::dataSize() {
-	return username.size();
-}
-
-void UDPInitPacket::pack(char* buf) {
-	packHeader(buf, eUDPInit); buf += headerSize();
-	/* data */
-	memcpy(buf, username.data(), username.size());
-}
-
-void UDPInitPacket::unpackData(const char* buf, uint32_t size) {
 	username = std::string(buf, size);
 }
 
@@ -597,7 +559,7 @@ namespace server {
 		}
 
 		_clients.erase(_clients.begin() + index); // delete the clients socket data
-		_pollfds.erase(_pollfds.begin() + index + 1); // delete the clients pollfd, +1 for the server pollfd
+		_pollfds.erase(_pollfds.begin() + index + 2); // delete the clients pollfd, +2 for the server pollfds
 		_eraseOffset++;
 	}
 
@@ -611,24 +573,6 @@ namespace server {
 			//		packet.sendTo(clientSocket);
 			//	break;
 			//}
-		case eUDPInit: {
-			UDPInitPacket& packet = *reinterpret_cast<UDPInitPacket*>(spPacket.get());
-
-			bool found = false;
-			for (auto& client : _clients) {
-				if (client.username == packet.username) {
-					client.addr = socket.addr;
-					found = true;
-				}
-			}
-			if (!found) { // send back the packet if failed
-				printf("failed to init udp for %s\n", packet.username.c_str());
-				packet.sendToDgram(_serverSocket.dgram, reinterpret_cast<sockaddr*>(&socket.addr));
-			}
-			else
-				printf("init udp for %s\n", packet.username.c_str());
-			break;
-		}
 		case eCONNECT: { // uses stream sockets
 			ConnectPacket& packet = *reinterpret_cast<ConnectPacket*>(spPacket.get());
 			{
@@ -725,13 +669,17 @@ namespace server {
 
 		int checkedPollCount = 0;
 
+		printf("handlePoll()\n");
+
 		pollfd serverStreamPollfd = _pollfds[0];
 		if (serverStreamPollfd.revents & POLLIN) { // accept client
+			printf("acceptClient()\n");
 			acceptClient();
 			checkedPollCount++;
 		}
 		pollfd serverDgramPollfd = _pollfds[1];
 		if (serverDgramPollfd.revents & POLLIN) { // recvClientDgram
+			printf("recvClientDgram(%i)\n", serverDgramPollfd.fd);
 			recvClientDgram();
 			checkedPollCount++;
 		}
