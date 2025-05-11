@@ -669,17 +669,13 @@ namespace server {
 
 		int checkedPollCount = 0;
 
-		printf("handlePoll()\n");
-
 		pollfd serverStreamPollfd = _pollfds[0];
 		if (serverStreamPollfd.revents & POLLIN) { // accept client
-			printf("acceptClient()\n");
 			acceptClient();
 			checkedPollCount++;
 		}
 		pollfd serverDgramPollfd = _pollfds[1];
 		if (serverDgramPollfd.revents & POLLIN) { // recvClientDgram
-			printf("recvClientDgram(%i)\n", serverDgramPollfd.fd);
 			recvClientDgram();
 			checkedPollCount++;
 		}
