@@ -22,6 +22,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netdb.h>
+#include <unistd.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <poll.h>
@@ -34,7 +35,7 @@ typedef in6_addr IN6_ADDR;
 #define UDP_PACKET_BUFFER_SIZE 1472
 
 namespace sock {
-	int close(int socket) {
+	int closeSocket(int socket) {
 #ifdef _WIN32
 		return closesocket(socket);
 #elif __linux__
@@ -326,6 +327,11 @@ std::shared_ptr<Packet> Packet::receiveFrom(int& type, int socket, int flags) {
 		delete[] buf;
 		return nullptr;
 	}
+	if (bytesRead == 0) { // detected a disconnect
+		printf("received disconnect\n");
+		delete[] buf;
+		return nullptr;
+	}
 	uint32_t dataSize;
 	unpackHeader(buf, dataSize, type);
 	delete[] buf;
@@ -550,20 +556,27 @@ namespace server {
 	}
 
 	void disconnectClient(int index) {
+		if(index < 0)
+			return;
 		SocketData socket = _clients[index];
 		printf("client disconnected: %s\n", sock::addrToPresentation(reinterpret_cast<sockaddr*>(&socket.addr)).c_str());
 
-		if (sock::close(socket.stream) < 0) {
+		if (sock::closeSocket(socket.stream) < 0) {
 			sock::printLastError("close(st#ream)");
 			exit(sock::lastError());
 		}
+
 
 		_clients.erase(_clients.begin() + index); // delete the clients socket data
 		_pollfds.erase(_pollfds.begin() + index + 2); // delete the clients pollfd, +2 for the server pollfds
 		_eraseOffset++;
 	}
 
-	void handlePacket(SocketData& socket, std::shared_ptr<Packet> spPacket, int type) {
+	void handlePacket(SocketData& socket, std::shared_ptr<Packet> spPacket, int type, int clientIndex) {
+		if(!spPacket.get()){
+			disconnectClient(clientIndex);
+			return;
+		}
 		switch (type)
 		{
 			//case eMESSAGE: {
@@ -584,13 +597,7 @@ namespace server {
 					}
 				if (nameTaken) {
 					printf("%s already present, wont be accepted\n", packet.username.c_str());
-					int i = 0;
-					for (const auto& comp : _clients) {
-						if (comp.stream == socket.stream) {
-							disconnectClient(i);
-						}
-						i++;
-					}
+					disconnectClient(clientIndex);
 					break;
 				}
 			} // prevent multiple usernames
@@ -646,7 +653,7 @@ namespace server {
 		}
 	}
 
-	void recvClientDgram() {
+	void recvClientDgram(int clientIndex) {
 		sockaddr_storage addr;
 		socklen_t addrlen = sizeof(sockaddr_storage);
 
@@ -654,13 +661,13 @@ namespace server {
 		auto spPacket = Packet::receiveFromDgram(type, _serverSocket.dgram, reinterpret_cast<sockaddr*>(&addr), &addrlen);
 		SocketData addrOnly;
 		addrOnly.addr = addr;
-		handlePacket(addrOnly, spPacket, type); // for dgram packets only their origin address is known while the sockets are unknown
+		handlePacket(addrOnly, spPacket, type, clientIndex); // for dgram packets only their origin address is known while the sockets are unknown
 	}
 
-	void recvClient(SocketData& socket) {
+	void recvClient(SocketData& socket, int clientIndex) {
 		int type;
 		auto spPacket = Packet::receiveFrom(type, socket.stream);
-		handlePacket(socket, spPacket, type);
+		handlePacket(socket, spPacket, type, clientIndex);
 	}
 
 	void handlePoll(int pollCount) {
@@ -676,7 +683,7 @@ namespace server {
 		}
 		pollfd serverDgramPollfd = _pollfds[1];
 		if (serverDgramPollfd.revents & POLLIN) { // recvClientDgram
-			recvClientDgram();
+			recvClientDgram(-1);
 			checkedPollCount++;
 		}
 
@@ -685,11 +692,11 @@ namespace server {
 		int eraseOffset = 0; // offset the index by the times erase was used as erase shifts all remaining indices by -1
 		for (size_t i = 0; i < _pollfds.size() - 2; i++) { // go through all client sockets
 			pollfd poll = _pollfds[i + 2]; // +2 for the 2 server sockets
-			if (poll.revents & POLLIN) {
-				recvClient(_clients[i - eraseOffset]);
-			}
 			if (poll.revents & POLLHUP) {
 				disconnectClient(i - eraseOffset);
+			}
+			if (poll.revents & POLLIN) {
+				recvClient(_clients[i - eraseOffset], i - eraseOffset);
 			}
 
 			if (poll.revents & (POLLIN | POLLHUP)) // add checked if poll had events
@@ -701,12 +708,12 @@ namespace server {
 
 	// free all resources
 	void freeResources() {
-		if (sock::close(_serverSocket.stream) == -1)
+		if (sock::closeSocket(_serverSocket.stream) == -1)
 			sock::printLastError("Server close(serverSocket.stream)");
-		if (sock::close(_serverSocket.dgram) == -1)
+		if (sock::closeSocket(_serverSocket.dgram) == -1)
 			sock::printLastError("Server close(serverSocket.dgram)");
 		for (const auto& socket : _clients)
-			if (sock::close(socket.stream) == -1)
+			if (sock::closeSocket(socket.stream) == -1)
 				sock::printLastError("Server close(clientSocket)");
 
 		_pollfds.clear();
